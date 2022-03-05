@@ -1,6 +1,5 @@
 import argparse
 from dataclasses import dataclass
-import select
 import socket
 import threading
 from typing import Optional
@@ -40,8 +39,6 @@ class Connection:
         print(f'Client {self.name} was left')
         self.client.shutdown(socket.SHUT_RDWR)
         self.keep_working.clear()
-        # if self.thread:
-        #     self.thread.join()
 
     def recv_msg(self) -> Optional[Message]:
         return receive_msg(self.client)
@@ -55,7 +52,8 @@ class Server:
         self.broadcast_mutex: threading.Lock = threading.Lock()
 
         try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock.settimeout(5)
             self.sock.bind((self.ip, self.port))
         except Exception as ex:
             print(f'EXCEPTION: INIT - {ex}')
@@ -69,8 +67,6 @@ class Server:
         connection._leave()
 
     def accept_connections(self):
-        self.sock.listen(69)
-
         print(f'Running on IP: {self.ip}')
         print(f'Running on port: {self.port}')
         
@@ -118,6 +114,16 @@ class Server:
                 print(f'EXCEPTION: HANDLE - {ex}')
                 self.delete_connection(connection)
                 return
+
+
+def receive_msg(sock: socket.socket) -> Optional[Message]:
+    try:
+        length = int(sock.recv(HEADER_SIZE).decode())
+        data = sock.recv(length)
+        return msg_deserialization(data)
+    except Exception as ex:
+        # print(f'EXCEPTION: RCV_MSG - {ex}')
+        return None
 
 
 def createArgParser():

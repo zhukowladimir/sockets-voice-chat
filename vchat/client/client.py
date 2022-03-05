@@ -12,22 +12,24 @@ from message import *
 
 class Client:
     def __init__(self, ip: str, port: int):
-        self.sock : socket.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.target_ip : str = ip
-        self.target_port : int = port
+        self.sock : socket.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.server : tuple[str, int] = (ip, port)
         self.keep_working : threading.Event = threading.Event()
         self.keep_going :threading.Event = threading.Event()
 
-        self.keep_working.set()
-        self.keep_going.set()
+        self.connected = False
+        self.buffer_size = 4096
 
         try:
-            self.sock.connect((self.target_ip, self.target_port))
+            self.connect_to_server()
         except Exception as ex:
             print(f'EXCEPTION: INIT - {ex}')
             return
 
-        self.chunk_size = 1024
+        self.keep_working.set()
+        self.keep_going.set()
+
+        self.chunk_size = 512
         audio_format = pyaudio.paInt16
         channels = 1
         rate = 20000
@@ -36,23 +38,31 @@ class Client:
         self.playing_stream = self.p.open(format=audio_format, channels=channels, rate=rate, output=True, frames_per_buffer=self.chunk_size)
         self.recording_stream = self.p.open(format=audio_format, channels=channels, rate=rate, input=True, frames_per_buffer=self.chunk_size)
         
+        # start threads
+        self.receive_thread = threading.Thread(target=self.receive_server_data).start()
+        self.send_audiodata_to_server()
+    
+    def connect_to_server(self) -> bool:
         while True:
             self.name = input('Enter your nickname: ')
-            self.sock.send(msg_serialization(HelloMessage(name=self.name)))
+            self.sock.sendto(msg_serialization(HelloMessage(name=self.name)), self.server)
 
-            ans = receive_msg(self.sock)
-            if ans and ans.type == MsgType.ACK.value:
+            ans = receive_msg(self.sock, self.server)
+
+            if ans is None:
+                self.kill()
+                raise Exception('smth went wrong, no answer')
+            if ans.type == MsgType.ACK.value:
                 print(f'Welcome to the Server, {self.name}')
+                self.connected = True
                 break
             elif ans and ans.type == MsgType.NACK.value:
                 print(f'Something went wrong: {ans.text}')
             else:
                 print('WTF:', ans)
-
-        # start threads
-        self.receive_thread = threading.Thread(target=self.receive_server_data).start()
-        self.send_audiodata_to_server()
-
+        
+        return True
+        
     def kill(self):
         if self.sock:
             self.sock.shutdown(socket.SHUT_RDWR)
@@ -88,6 +98,15 @@ class Client:
                     self.receive_thread.join()
                 break
 
+
+def receive_msg(sock: socket.socket) -> Optional[Message]:
+    try:
+        length = int(sock.recvfrom(HEADER_SIZE)[0].decode())
+        data = sock.recvfrom(length)[0]
+        return msg_deserialization(data)
+    except Exception as ex:
+        # print(f'EXCEPTION: RCV_MSG - {ex}')
+        return None
 
 
 def createArgParser():
