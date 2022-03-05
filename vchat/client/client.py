@@ -1,7 +1,8 @@
 import argparse
 import socket
 import threading
-import pyaudio
+import curses
+from pyaudio import PyAudio, paInt16
 import sys
 import os
 
@@ -18,21 +19,21 @@ class Client:
         self.keep_working : threading.Event = threading.Event()
         self.keep_going :threading.Event = threading.Event()
 
-        self.keep_working.set()
-        self.keep_going.set()
-
         try:
             self.sock.connect((self.target_ip, self.target_port))
         except Exception as ex:
             print(f'EXCEPTION: INIT - {ex}')
             return
 
+        self.keep_working.set()
+        self.keep_going.set()
+
         self.chunk_size = 1024
-        audio_format = pyaudio.paInt16
+        audio_format = paInt16
         channels = 1
         rate = 20000
 
-        self.p = pyaudio.PyAudio()
+        self.p = PyAudio()
         self.playing_stream = self.p.open(format=audio_format, channels=channels, rate=rate, output=True, frames_per_buffer=self.chunk_size)
         self.recording_stream = self.p.open(format=audio_format, channels=channels, rate=rate, input=True, frames_per_buffer=self.chunk_size)
         
@@ -50,7 +51,10 @@ class Client:
                 print('WTF:', ans)
 
         # start threads
-        self.receive_thread = threading.Thread(target=self.receive_server_data).start()
+        self.key_thread = threading.Thread(target=self.listen)
+        self.key_thread.start()
+        self.receive_thread = threading.Thread(target=self.receive_server_data)
+        self.receive_thread.start()
         self.send_audiodata_to_server()
 
     def kill(self):
@@ -71,24 +75,38 @@ class Client:
                 elif msg.type == MsgType.INFO.value:
                     print(msg.text)
             except (Exception, KeyboardInterrupt) as ex:
-                print(f'EXCEPTION: RECEIVER - {ex}')
+                # print(f'EXCEPTION: RECEIVER - {ex}')
                 self.kill()
                 return
 
     def send_audiodata_to_server(self):
-        while self.keep_going.is_set():
+        while self.keep_working.is_set():
+            self.keep_going.wait()
             try:
                 data = self.recording_stream.read(self.chunk_size)
                 msg = AudioMessage(audio=data, src=self.name)
                 self.sock.sendall(msg_serialization(msg))
             except (Exception, KeyboardInterrupt) as ex:
-                print(f'EXCEPTION: SENDER - {ex}')
+                # print(f'EXCEPTION: SENDER - {ex}')
                 self.kill()
                 if self.receive_thread:
                     self.receive_thread.join()
                 break
-
-
+    
+    def listen(self):
+        while self.keep_working.is_set():
+            cmd = input()
+            if cmd == 'unmute':
+                if not self.keep_going.is_set():
+                    self.keep_going.set()
+                print('You are unmuted!')
+                self.sock.sendall(msg_serialization(InfoMessage(text=f'{self.name} is speaking.')))
+            elif cmd == 'mute':
+                if self.keep_going.is_set():
+                    self.keep_going.clear()
+                print('You are muted!')
+                self.sock.sendall(msg_serialization(InfoMessage(text=f'{self.name} is muted.')))
+        
 
 def createArgParser():
     parser = argparse.ArgumentParser()
@@ -98,4 +116,4 @@ def createArgParser():
 
 if __name__ == '__main__':
     args = createArgParser().parse_args()
-    client = Client(args.ip, args.port)
+    client = Client(args.ip, int(args.port))

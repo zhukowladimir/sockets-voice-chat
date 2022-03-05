@@ -1,8 +1,6 @@
 from dataclasses import dataclass
-from dataclasses_json import dataclass_json
 from enum import Enum
 from typing import Optional
-from base64 import b64decode, b64encode
 import ormsgpack
 import socket
 
@@ -59,8 +57,9 @@ def msg_deserialization(msg: bytes) -> Message:
     try:
         data = ormsgpack.unpackb(msg)
     except Exception as ex:
-        print(f'EXCEPTION: MSG_DESER - {ex}')
-        print(msg)
+        # print(f'EXCEPTION: MSG_DESER - {ex}')
+        # print(msg)
+        pass 
 
     if data['type'] != MsgType.AUDIO.value:
         print('Log: got msg', data)

@@ -58,7 +58,7 @@ class Server:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.bind((self.ip, self.port))
         except Exception as ex:
-            print(f'EXCEPTION: INIT - {ex}')
+            # print(f'EXCEPTION: INIT - {ex}')
             return
         
         self.connections: dict[str, Connection] = {}
@@ -88,8 +88,6 @@ class Server:
             connection.thread = threading.Thread(target=self.handle_client, args=(connection, ))
             self.connections[connection.name] = connection
             connection.thread.start()
-
-            print(self.connections)
         
     def broadcast(self, src: Connection, msg: Message):
         self.broadcast_mutex.acquire()
@@ -100,7 +98,8 @@ class Server:
             except socket.error as err:
                 self.delete_connection(connection)
             except Exception as ex:
-                print(f'EXCEPTION: BROADCAST - {ex}')
+                # print(f'EXCEPTION: BROADCAST - {ex}')
+                pass
         
         self.broadcast_mutex.release()
             
@@ -115,7 +114,7 @@ class Server:
                     return
                 self.broadcast(connection, msg)
             except Exception as ex:
-                print(f'EXCEPTION: HANDLE - {ex}')
+                # print(f'EXCEPTION: HANDLE - {ex}')
                 self.delete_connection(connection)
                 return
 
