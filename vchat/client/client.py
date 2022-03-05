@@ -12,11 +12,12 @@ from message import *
 
 class Client:
     def __init__(self, ip: str, port: int):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.target_ip = ip
-        self.target_port = port
-        self.keep_working = threading.Event()
-        self.keep_going= threading.Event()
+        self.sock : socket.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.target_ip : str = ip
+        self.target_port : int = port
+        self.keep_working : threading.Event = threading.Event()
+        self.keep_going :threading.Event = threading.Event()
+
         self.keep_working.set()
         self.keep_going.set()
 
@@ -26,14 +27,14 @@ class Client:
             print(f'EXCEPTION: INIT - {ex}')
             return
 
-        chunk_size = 512
+        self.chunk_size = 1024
         audio_format = pyaudio.paInt16
         channels = 1
         rate = 20000
 
         self.p = pyaudio.PyAudio()
-        self.playing_stream = self.p.open(format=audio_format, channels=channels, rate=rate, output=True, frames_per_buffer=chunk_size)
-        self.recording_stream = self.p.open(format=audio_format, channels=channels, rate=rate, input=True, frames_per_buffer=chunk_size)
+        self.playing_stream = self.p.open(format=audio_format, channels=channels, rate=rate, output=True, frames_per_buffer=self.chunk_size)
+        self.recording_stream = self.p.open(format=audio_format, channels=channels, rate=rate, input=True, frames_per_buffer=self.chunk_size)
         
         while True:
             self.name = input('Enter your nickname: ')
@@ -50,37 +51,39 @@ class Client:
 
         # start threads
         self.receive_thread = threading.Thread(target=self.receive_server_data).start()
-        self.send_data_to_server()
+        self.send_audiodata_to_server()
+
+    def kill(self):
+        if self.sock:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        self.keep_working.clear()
 
     def receive_server_data(self):
         while self.keep_working.is_set():
             try:
                 msg = receive_msg(self.sock)
                 # print(f'LOG: RECEIVER - {msg}')
-                if msg and msg.type == MsgType.AUDIO.value:
+                if msg is None:
+                    self.kill()
+                    return
+                if msg.type == MsgType.AUDIO.value:
                     self.playing_stream.write(msg.audio)
-                elif msg and msg.type == MsgType.INFO.value:
+                elif msg.type == MsgType.INFO.value:
                     print(msg.text)
             except (Exception, KeyboardInterrupt) as ex:
                 print(f'EXCEPTION: RECEIVER - {ex}')
-                if self.sock:
-                    self.sock.shutdown(socket.SHUT_RDWR)
-                self.keep_working.clear()
-                if self.receive_thread:
-                    self.receive_thread.join()
-                break
+                self.kill()
+                return
 
-    def send_data_to_server(self):
-        while self.keep_going:
+    def send_audiodata_to_server(self):
+        while self.keep_going.is_set():
             try:
-                data = self.recording_stream.read(512)
+                data = self.recording_stream.read(self.chunk_size)
                 msg = AudioMessage(audio=data, src=self.name)
                 self.sock.sendall(msg_serialization(msg))
-            except Exception as ex:
+            except (Exception, KeyboardInterrupt) as ex:
                 print(f'EXCEPTION: SENDER - {ex}')
-                if self.sock:
-                    self.sock.shutdown(socket.SHUT_RDWR)
-                self.keep_working.clear()
+                self.kill()
                 if self.receive_thread:
                     self.receive_thread.join()
                 break

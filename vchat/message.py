@@ -60,6 +60,7 @@ def msg_deserialization(msg: bytes) -> Message:
         data = ormsgpack.unpackb(msg)
     except Exception as ex:
         print(f'EXCEPTION: MSG_DESER - {ex}')
+        print(msg)
 
     if data['type'] != MsgType.AUDIO.value:
         print('Log: got msg', data)
@@ -72,6 +73,8 @@ def msg_deserialization(msg: bytes) -> Message:
         return AckMessage(**data)
     elif data['type'] == MsgType.NACK.value:
         return NackMessage(**data)
+    elif data['type'] == MsgType.INFO.value:
+        return InfoMessage(**data)
 
 
 def receive_msg(sock: socket.socket) -> Optional[Message]:
@@ -80,7 +83,7 @@ def receive_msg(sock: socket.socket) -> Optional[Message]:
         data = sock.recv(length)
         return msg_deserialization(data)
     except Exception as ex:
-        print(f'EXCEPTION: RCV_MSG - {ex}')
+        # print(f'EXCEPTION: RCV_MSG - {ex}')
         return None
 
 # print(msg_deserialization(msg_serialization(AudioMessage(1, b'sdf324lK23', 'zusty'))[10:]))
